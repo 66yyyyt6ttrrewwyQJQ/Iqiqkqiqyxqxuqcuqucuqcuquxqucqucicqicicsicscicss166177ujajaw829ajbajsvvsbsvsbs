@@ -1,0 +1,356 @@
+local RageModule = {}
+RageModule.__index = RageModule
+
+function RageModule.new(config)
+	local self = setmetatable({}, RageModule)
+
+	self.player = config.Player
+	self.Players = config.Services.Players
+	self.RunService = config.Services.RunService
+	self.Workspace = config.Services.Workspace
+	self.ReplicatedStorage = config.Services.ReplicatedStorage
+	self.Notification = config.Notification
+	self.Visuals = config.Visuals
+
+	self.RAGE_ENABLED = false
+	self.RAGE_HITPART = "Head"
+	self.RAGE_HITCHANCE = 0
+	self.RAGE_HITCHANCE_ENABLED = false
+	self.RAGE_AUTOSHOOT = false
+	self.RAGE_NOSPREAD = false
+	self.AIRSHOT_ACTIVE = false
+	self.AUTO_EQUIP_SSG = false
+	self.MAX_DISTANCE = 2000
+
+	self.PREDICTION_ENABLED = true
+	self.PREDICTION_STRENGTH = 4.5
+	self.BULLET_SPEED = 800
+	
+	self._velocityTracking = {}
+	
+	self._targetHistory = {}
+	self._lastTargetSwitch = 0
+	self.TARGET_SWITCH_DELAY = 0.3
+
+	self.MIN_DAMAGE_ENABLED = false
+	self.MIN_DAMAGE_VALUE = 0
+	self.BASE_DAMAGE = 54
+
+	self.DOUBLETAP_ENABLED = false
+	self.DOUBLETAP_MODE = "Aggressive"
+	self.DOUBLETAP_TELEPORT = true
+	self.DOUBLETAP_MAX_TP_DIST = 15
+	self.dtLastUse = 0
+	self.DT_COOLDOWN = 1.5
+	self.DT_MAXDIST_OVERRIDE = false
+
+	self.OVERRIDE_TARGET_ENABLED = false
+	self.OVERRIDE_TARGET_LIST = {}
+
+	self.REMOVE_HEAD_ENABLED = false
+	self._removeHeadTrack = nil
+	self._removeHeadAnimObj = nil
+	self._removeHeadCharConn = nil
+	self._removeHeadNoclipConn = nil
+	self._cachedBypassAnimId = nil
+	
+	self.FREESTAND_ENABLED = false
+	self._freestandConn = nil
+	self._freestandLastUpdate = 0
+
+	self.RAPIDFIRE_ENABLED = false
+	self.RAPIDFIRE_SHOTS = 10
+	self.RAPIDFIRE_MODE = "Automatic"
+	self.RAPIDFIRE_REEQUIP = true
+	self.RAPIDFIRE_CYCLE_DELAY = 0.02
+	self._rfLoopActive = false
+	self._rfSteppedConn = nil
+	self._rfRenderConn = nil
+
+	self.WALLBANG_ENABLED = false
+	self.NO_TP_WALLBANG_ENABLED = false
+
+	self.lastShot = 0
+	self.FIRE_RATE = 0.025
+	self.FIRE_RATE_AWP = 0.6
+	self.ping = 0
+	self.lastPingUpdate = 0
+	self.PING_UPDATE_RATE = 1
+	self.activePlayers = {}
+	self.lastPlayerListUpdate = 0
+	self.PLAYER_LIST_UPDATE_RATE = 0.15
+
+	self.autoEquippedOnce = false
+
+	self._rayParams = RaycastParams.new()
+	self._rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	self._rayParams.IgnoreWater = true
+
+	self._cachedGun = nil
+	self._cachedGunTick = 0
+	self._GUN_CACHE_RATE = 0.1
+
+	self._lastHeartbeat = 0
+	self._HEARTBEAT_INTERVAL = 1 / 240
+
+	self.BODY_PART_MULTIPLIERS = {
+		["Head"] = 4.0,
+		["UpperTorso"] = 1.0,
+		["LowerTorso"] = 1.0,
+		["Torso"] = 1.0,
+		["HumanoidRootPart"] = 1.0,
+		["LeftUpperArm"] = 0.75,
+		["LeftLowerArm"] = 0.75,
+		["LeftHand"] = 0.75,
+		["RightUpperArm"] = 0.75,
+		["RightLowerArm"] = 0.75,
+		["RightHand"] = 0.75,
+		["LeftUpperLeg"] = 0.6,
+		["LeftLowerLeg"] = 0.6,
+		["LeftFoot"] = 0.6,
+		["RightUpperLeg"] = 0.6,
+		["RightLowerLeg"] = 0.6,
+		["RightFoot"] = 0.6,
+		["Left Leg"] = 0.6,
+		["Right Leg"] = 0.6,
+	}
+
+	self.MIN_DAMAGE_PRIORITY = {
+		{name = "Legs", parts = {"LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg", "Left Leg", "Right Leg"}, multiplier = 0.6},
+		{name = "Arms", parts = {"LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftHand", "RightHand", "Left Arm", "Right Arm"}, multiplier = 0.75},
+		{name = "Body", parts = {"UpperTorso", "LowerTorso", "Torso", "HumanoidRootPart"}, multiplier = 1.0},
+		{name = "Head", parts = {"Head"}, multiplier = 4.0},
+	}
+
+	self._VISIBILITY_FAST = {"Head", "UpperTorso", "HumanoidRootPart"}
+
+	return self
+end
+
+function RageModule:GetEffectiveMaxDist()
+	if self.DT_MAXDIST_OVERRIDE and self.DOUBLETAP_ENABLED then
+		return 99999
+	end
+	return self.MAX_DISTANCE
+end
+
+function RageModule:IsAlive()
+	local char = self.player.Character
+	if not char then return false end
+	local hum = char:FindFirstChild("Humanoid")
+	return hum and hum.Health > 0
+end
+
+function RageModule:IsEnemy(target)
+	if self.player.Team and target.Team then
+		return self.player.Team ~= target.Team
+	end
+	return true
+end
+
+function RageModule:IsInAir()
+	local char = self.player.Character
+	if not char then return true end
+	local hum = char:FindFirstChild("Humanoid")
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hum or not hrp then return true end
+	if hum.FloorMaterial == Enum.Material.Air then return true end
+	if math.abs(hrp.AssemblyLinearVelocity.Y) > 2 then return true end
+	return false
+end
+
+function RageModule:GetGun()
+	local now = tick()
+	if self._cachedGun and (now - self._cachedGunTick) < self._GUN_CACHE_RATE then
+		if self._cachedGun.type == "AWP" and self._cachedGun.fireShot and self._cachedGun.fireShot.Parent then
+			return self._cachedGun
+		elseif self._cachedGun.type == "CastRay" and self._cachedGun.castRay and self._cachedGun.castRay.Parent and self._cachedGun.hole and self._cachedGun.hole.Parent then
+			return self._cachedGun
+		end
+		self._cachedGun = nil
+	end
+
+	local char = self.player.Character
+	if not char then
+		self._cachedGun = nil
+		return nil
+	end
+
+	for _, item in pairs(char:GetChildren()) do
+		if item:IsA("Tool") then
+			local remotes = item:FindFirstChild("Remotes")
+			if remotes then
+				local fireShot = remotes:FindFirstChild("FireShot")
+				if fireShot then
+					self._cachedGun = {type = "AWP", fireShot = fireShot, fireRate = self.FIRE_RATE_AWP}
+					self._cachedGunTick = now
+					return self._cachedGun
+				end
+				local castRay = remotes:FindFirstChild("CastRay")
+				if castRay then
+					local hole = item:FindFirstChild("Hole")
+					self._cachedGun = {type = "CastRay", castRay = castRay, hole = hole, fireRate = self.FIRE_RATE}
+					self._cachedGunTick = now
+					return self._cachedGun
+				end
+			end
+		end
+	end
+	self._cachedGun = nil
+	return nil
+end
+
+function RageModule:UpdatePing()
+	local now = tick()
+	if now - self.lastPingUpdate > self.PING_UPDATE_RATE then
+		local stats = game:GetService("Stats")
+		self.ping = stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+		self.lastPingUpdate = now
+	end
+	return self.ping
+end
+
+function RageModule:GetPrediction(target)
+	if not self.PREDICTION_ENABLED then return Vector3.new() end
+	local char = target.Character
+	if not char then return Vector3.new() end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return Vector3.new() end
+
+	local now = tick()
+	if not self._velocityTracking[target] then
+		self._velocityTracking[target] = {vel = hrp.AssemblyLinearVelocity, time = now}
+		return hrp.AssemblyLinearVelocity * (self.PREDICTION_STRENGTH / 10)
+	end
+
+	local track = self._velocityTracking[target]
+	local deltaTime = now - track.time
+	local accel = (hrp.AssemblyLinearVelocity - track.vel) / deltaTime
+	track.vel = hrp.AssemblyLinearVelocity
+	track.time = now
+
+	local predictedVel = hrp.AssemblyLinearVelocity + accel * 0.5
+	return predictedVel * (self.PREDICTION_STRENGTH / 10)
+end
+
+function RageModule:GetTarget()
+	if not self.RAGE_ENABLED then return nil end
+	local myChar = self.player.Character
+	if not myChar then return nil end
+	local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+	if not myHrp then return nil end
+
+	local closest = nil
+	local closestDist = math.huge
+
+	for _, plr in pairs(self.Players:GetPlayers()) do
+		if plr ~= self.player and self:IsEnemy(plr) then
+			local char = plr.Character
+			if char then
+				local hum = char:FindFirstChild("Humanoid")
+				if hum and hum.Health > 0 then
+					local hrp = char:FindFirstChild("HumanoidRootPart")
+					if hrp then
+						local dist = (myHrp.Position - hrp.Position).Magnitude
+						if dist < self:GetEffectiveMaxDist() and dist < closestDist then
+							closestDist = dist
+							closest = plr
+						end
+					end
+				end
+			end
+		end
+	end
+	return closest
+end
+
+function RageModule:CanWallbang(origin, targetPos)
+	if not self.WALLBANG_ENABLED then return false end
+	local direction = (targetPos - origin)
+	local distance = direction.Magnitude
+	direction = direction.Unit
+
+	self._rayParams.FilterDescendantsInstances = {self.player.Character}
+	local result = workspace:Raycast(origin, direction * distance, self._rayParams)
+	return not result
+end
+
+function RageModule:GetBestHitPart(target)
+	local char = target.Character
+	if not char then return nil end
+
+	local parts = {"Head", "UpperTorso", "HumanoidRootPart", "LowerTorso"}
+	for _, partName in pairs(parts) do
+		local part = char:FindFirstChild(partName)
+		if part then
+			return part
+		end
+	end
+	return char:FindFirstChild("HumanoidRootPart")
+end
+
+function RageModule:FireAtTarget(target)
+	if not target then return end
+	local gun = self:GetGun()
+	if not gun then return end
+
+	local char = target.Character
+	if not char then return end
+	local hitPart = self:GetBestHitPart(target)
+	if not hitPart then return end
+
+	local myChar = self.player.Character
+	local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myHrp then return end
+
+	local targetPos = hitPart.Position + self:GetPrediction(target)
+	local origin = gun.type == "AWP" and (gun.fireShot and gun.fireShot.Parent and gun.fireShot.Parent.Position or myHrp.Position) or (gun.hole and gun.hole.Position or myHrp.Position)
+
+	if self.WALLBANG_ENABLED and not self:CanWallbang(origin, targetPos) then
+		return
+	end
+
+	local args = {targetPos}
+	if gun.type == "AWP" then
+		if gun.fireShot then
+			gun.fireShot:FireServer(unpack(args))
+		end
+	else
+		if gun.castRay then
+			gun.castRay:FireServer(unpack(args))
+		end
+	end
+
+	self.lastShot = tick()
+end
+
+function RageModule:Update()
+	if not self.RAGE_ENABLED or not self:IsAlive() then return end
+
+	local now = tick()
+	if now - self.lastShot < self.FIRE_RATE then return end
+
+	local target = self:GetTarget()
+	if target then
+		self:FireAtTarget(target)
+	end
+end
+
+function RageModule:Connect()
+	self._heartbeatConn = self.RunService.Heartbeat:Connect(function()
+		local now = tick()
+		if now - self._lastHeartbeat >= self._HEARTBEAT_INTERVAL then
+			self:Update()
+			self._lastHeartbeat = now
+		end
+	end)
+end
+
+function RageModule:Disconnect()
+	if self._heartbeatConn then
+		self._heartbeatConn:Disconnect()
+		self._heartbeatConn = nil
+	end
+end
+
+return RageModule
