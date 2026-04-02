@@ -1,0 +1,653 @@
+local ESPModule = {}
+ESPModule.__index = ESPModule
+
+local hasDrawing = Drawing and Drawing.new
+local FONT = 2
+pcall(function() FONT = Drawing.Fonts.Plex end)
+
+local MAX_BT = 12
+local BT_INTERVAL = 0.04
+
+local BONES_R15 = {
+    {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
+    {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
+    {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
+    {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
+    {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
+}
+
+local BONES_R6 = {
+    {"Head","Torso"},
+    {"Torso","Left Arm"},{"Torso","Right Arm"},
+    {"Torso","Left Leg"},{"Torso","Right Leg"},
+}
+
+local V2new = Vector2.new
+local V3new = Vector3.new
+local C3new = Color3.new
+local C3rgb = Color3.fromRGB
+local mathFloor = math.floor
+local mathAbs = math.abs
+local mathClamp = math.clamp
+local mathMin = math.min
+local mathMax = math.max
+local tick = tick
+
+local function newLine()
+    if not hasDrawing then return nil end
+    local l = Drawing.new("Line")
+    l.Visible = false
+    l.Thickness = 1.5
+    l.Color = C3new(1,1,1)
+    l.Transparency = 1
+    return l
+end
+
+local function newSquare(filled)
+    if not hasDrawing then return nil end
+    local s = Drawing.new("Square")
+    s.Visible = false
+    s.Thickness = 1.5
+    s.Filled = filled or false
+    s.Color = C3new(1,1,1)
+    s.Transparency = 1
+    return s
+end
+
+local function newText()
+    if not hasDrawing then return nil end
+    local t = Drawing.new("Text")
+    t.Visible = false
+    t.Color = C3new(1,1,1)
+    t.Size = 14
+    t.Center = true
+    t.Outline = true
+    t.OutlineColor = C3new(0,0,0)
+    t.Font = FONT
+    t.Transparency = 1
+    return t
+end
+
+local function rem(obj)
+    if obj then pcall(function() obj:Remove() end) end
+end
+
+function ESPModule.new(config)
+    local self = setmetatable({}, ESPModule)
+
+    self.player = config.Player
+    self.Players = config.Services.Players
+    self.RunService = config.Services.RunService
+    self.Workspace = config.Services.Workspace or game:GetService("Workspace")
+    self.Camera = self.Workspace.CurrentCamera
+
+    self.ESP_ENABLED = true
+    self.SELF_ESP = false
+    self.TEAM_CHECK = true
+    self.TEAM_HIDE = false
+
+    self.BOX_ENABLED = true
+    self.BOX_TYPE = "Corner"
+    self.BOX_COLOR = C3rgb(130, 85, 255)
+    self.BOX_FILL_ENABLED = true
+    self.BOX_FILL_COLOR = C3rgb(130, 85, 255)
+    self.BOX_FILL_TRANSPARENCY = 0.65
+
+    self.HEALTH_ENABLED = true
+    self.HEALTH_GRADIENT = true
+    self.HEALTH_LOW_COLOR = C3rgb(255, 50, 50)
+    self.HEALTH_HIGH_COLOR = C3rgb(80, 255, 80)
+
+    self.NAME_ENABLED = true
+    self.NAME_COLOR = C3new(1,1,1)
+    self.DISTANCE_ENABLED = true
+    self.DISTANCE_COLOR = C3rgb(200,200,200)
+    self.WEAPON_ENABLED = true
+    self.WEAPON_COLOR = C3rgb(200,200,200)
+
+    self.TRACERS_ENABLED = true
+    self.TRACER_COLOR = C3rgb(130, 85, 255)
+    self.TRACER_ORIGIN = "Bottom"
+    self.TRACER_THICKNESS = 1.8
+
+    self.SKELETON_ENABLED = true
+    self.SKELETON_COLOR = C3rgb(130, 85, 255)
+    self.SKELETON_THICKNESS = 1.6
+
+    self.CHAMS_ENABLED = true
+    self.CHAMS_TYPE = "Outline"
+    self.CHAMS_OUTLINE_COLOR = C3rgb(130, 85, 255)
+    self.CHAMS_FILL_COLOR = C3rgb(130, 85, 255)
+    self.CHAMS_FILL_TRANSPARENCY = 0.45
+    self.CHAMS_OUTLINE_TRANSPARENCY = 0
+    self.CHAMS_DEPTH = "AlwaysOnTop"
+
+    self.BACKTRACK_ENABLED = true
+    self.BACKTRACK_COLOR = C3rgb(130, 85, 255)
+    self.BACKTRACK_DURATION = 0.65
+    self.BACKTRACK_TRANSPARENCY = 0.55
+
+    self._data = {}
+    self._connections = {}
+    self._playerCache = {}
+    self._playerCacheTick = 0
+    self._PLAYER_CACHE_RATE = 0.25
+    self._MAX_ESP_DIST = 2500
+    self._frame = 0
+
+    return self
+end
+
+function ESPModule:SetEnabled(v)            self.ESP_ENABLED = v end
+function ESPModule:SetSelfESP(v)            self.SELF_ESP = v end
+function ESPModule:SetTeamCheck(v)          self.TEAM_CHECK = v end
+function ESPModule:SetTeamHide(v)           self.TEAM_HIDE = v end
+
+function ESPModule:SetBoxEnabled(v)         self.BOX_ENABLED = v end
+function ESPModule:SetBoxType(v)            self.BOX_TYPE = v end
+function ESPModule:SetBoxColor(v)           self.BOX_COLOR = v end
+function ESPModule:SetBoxFillEnabled(v)     self.BOX_FILL_ENABLED = v end
+function ESPModule:SetBoxFillColor(v)       self.BOX_FILL_COLOR = v end
+function ESPModule:SetBoxFillTransparency(v)self.BOX_FILL_TRANSPARENCY = v end
+
+function ESPModule:SetHealthEnabled(v)      self.HEALTH_ENABLED = v end
+function ESPModule:SetHealthGradient(v)     self.HEALTH_GRADIENT = v end
+function ESPModule:SetHealthLowColor(v)     self.HEALTH_LOW_COLOR = v end
+function ESPModule:SetHealthHighColor(v)    self.HEALTH_HIGH_COLOR = v end
+
+function ESPModule:SetNameEnabled(v)        self.NAME_ENABLED = v end
+function ESPModule:SetNameColor(v)          self.NAME_COLOR = v end
+function ESPModule:SetDistanceEnabled(v)    self.DISTANCE_ENABLED = v end
+function ESPModule:SetDistanceColor(v)      self.DISTANCE_COLOR = v end
+function ESPModule:SetWeaponEnabled(v)      self.WEAPON_ENABLED = v end
+function ESPModule:SetWeaponColor(v)        self.WEAPON_COLOR = v end
+
+function ESPModule:SetTracersEnabled(v)     self.TRACERS_ENABLED = v end
+function ESPModule:SetTracerColor(v)        self.TRACER_COLOR = v end
+function ESPModule:SetTracerOrigin(v)       self.TRACER_ORIGIN = v end
+function ESPModule:SetTracerThickness(v)    self.TRACER_THICKNESS = v end
+
+function ESPModule:SetSkeletonEnabled(v)    self.SKELETON_ENABLED = v end
+function ESPModule:SetSkeletonColor(v)      self.SKELETON_COLOR = v end
+function ESPModule:SetSkeletonThickness(v)  self.SKELETON_THICKNESS = v end
+
+function ESPModule:SetChamsEnabled(v)       self.CHAMS_ENABLED = v end
+function ESPModule:SetChamsType(v)          self.CHAMS_TYPE = v end
+function ESPModule:SetChamsOutlineColor(v)  self.CHAMS_OUTLINE_COLOR = v end
+function ESPModule:SetChamsFillColor(v)     self.CHAMS_FILL_COLOR = v end
+function ESPModule:SetChamsFillTransparency(v) self.CHAMS_FILL_TRANSPARENCY = v end
+function ESPModule:SetChamsOutlineTransparency(v) self.CHAMS_OUTLINE_TRANSPARENCY = v end
+function ESPModule:SetChamsDepth(v)         self.CHAMS_DEPTH = v end
+
+function ESPModule:SetBacktrackEnabled(v)   self.BACKTRACK_ENABLED = v end
+function ESPModule:SetBacktrackColor(v)     self.BACKTRACK_COLOR = v end
+function ESPModule:SetBacktrackDuration(v)  self.BACKTRACK_DURATION = v end
+function ESPModule:SetBacktrackTransparency(v) self.BACKTRACK_TRANSPARENCY = v end
+
+local function IsTeammate(self, plr)
+    if not self.TEAM_CHECK then return false end
+    if self.player.Team == nil or plr.Team == nil then return false end
+    return self.player.Team == plr.Team
+end
+
+local function GetHealthColor(self, health, maxHealth)
+    if not self.HEALTH_GRADIENT then return self.HEALTH_HIGH_COLOR end
+    local t = health / maxHealth
+    return self.HEALTH_LOW_COLOR:Lerp(self.HEALTH_HIGH_COLOR, t)
+end
+
+local function GetBoundingBox(char)
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    if not root then return nil, nil end
+
+    local size = root.Size
+    local pos, onScreen = self.Camera:WorldToViewportPoint(root.Position + V3new(0, size.Y/2 + 1, 0))
+    if not onScreen then return nil, nil end
+
+    local _, sizeOnScreen = self.Camera:WorldToViewportPoint(root.Position - V3new(size.X/2, size.Y/2, 0))
+    local width = mathAbs(pos.X - sizeOnScreen.X) * 1.8
+    local height = mathAbs(pos.Y - sizeOnScreen.Y) * 1.9
+
+    return V2new(pos.X, pos.Y), V2new(width, height)
+end
+
+function ESPModule:CreateData(plr)
+    if self._data[plr] then return self._data[plr] end
+
+    local data = {
+        box = {topLeft = newLine(), topRight = newLine(), bottomLeft = newLine(), bottomRight = newLine(), left = newLine(), right = newLine()},
+        fill = newSquare(true),
+        healthBar = newSquare(false),
+        healthBg = newSquare(true),
+        name = newText(),
+        distance = newText(),
+        weapon = newText(),
+        tracer = newLine(),
+        skeleton = {},
+        chams = nil,
+        backtrack = {},
+        lastPos = {},
+        lastTick = 0
+    }
+
+    for i = 1, 15 do
+        data.skeleton[i] = newLine()
+    end
+
+    self._data[plr] = data
+    return data
+end
+
+function ESPModule:DestroyData(plr)
+    local data = self._data[plr]
+    if not data then return end
+
+    for _, obj in pairs(data.box) do rem(obj) end
+    rem(data.fill)
+    rem(data.healthBar)
+    rem(data.healthBg)
+    rem(data.name)
+    rem(data.distance)
+    rem(data.weapon)
+    rem(data.tracer)
+
+    for _, line in ipairs(data.skeleton) do rem(line) end
+
+    if data.chams then
+        rem(data.chams)
+    end
+
+    for _, ghost in ipairs(data.backtrack) do
+        rem(ghost)
+    end
+
+    self._data[plr] = nil
+end
+
+function ESPModule:HideAll(data)
+    if not data then return end
+
+    for _, obj in pairs(data.box) do if obj then obj.Visible = false end end
+    if data.fill then data.fill.Visible = false end
+    if data.healthBar then data.healthBar.Visible = false end
+    if data.healthBg then data.healthBg.Visible = false end
+    if data.name then data.name.Visible = false end
+    if data.distance then data.distance.Visible = false end
+    if data.weapon then data.weapon.Visible = false end
+    if data.tracer then data.tracer.Visible = false end
+
+    for _, line in ipairs(data.skeleton) do if line then line.Visible = false end end
+end
+
+function ESPModule:UpdateBox(data, pos, size)
+    if not self.BOX_ENABLED or not pos then
+        for _, l in pairs(data.box) do if l then l.Visible = false end end
+        return
+    end
+
+    local halfW, halfH = size.X/2, size.Y/2
+    local tl = V2new(pos.X - halfW, pos.Y - halfH)
+    local tr = V2new(pos.X + halfW, pos.Y - halfH)
+    local bl = V2new(pos.X - halfW, pos.Y + halfH)
+    local br = V2new(pos.X + halfW, pos.Y + halfH)
+
+    if self.BOX_TYPE == "Corner" then
+        local len = mathMin(size.X, size.Y) * 0.25
+
+        data.box.topLeft.From = tl; data.box.topLeft.To = V2new(tl.X + len, tl.Y)
+        data.box.topRight.From = tr; data.box.topRight.To = V2new(tr.X - len, tr.Y)
+        data.box.bottomLeft.From = bl; data.box.bottomLeft.To = V2new(bl.X + len, bl.Y)
+        data.box.bottomRight.From = br; data.box.bottomRight.To = V2new(br.X - len, br.Y)
+
+        data.box.left.From = tl; data.box.left.To = V2new(tl.X, tl.Y + len)
+        data.box.right.From = tr; data.box.right.To = V2new(tr.X, tr.Y + len)
+    else
+        data.box.topLeft.From = tl; data.box.topLeft.To = tr
+        data.box.topRight.From = tr; data.box.topRight.To = br
+        data.box.bottomLeft.From = bl; data.box.bottomLeft.To = br
+        data.box.bottomRight.From = tl; data.box.bottomRight.To = bl
+    end
+
+    for _, l in pairs(data.box) do
+        if l then
+            l.Color = self.BOX_COLOR
+            l.Thickness = 1.6
+            l.Visible = true
+        end
+    end
+end
+
+function ESPModule:UpdateHealth(data, pos, size, health, maxHealth)
+    if not self.HEALTH_ENABLED or not pos then
+        if data.healthBg then data.healthBg.Visible = false end
+        if data.healthBar then data.healthBar.Visible = false end
+        return
+    end
+
+    local barWidth = 4
+    local barHeight = size.Y
+    local x = pos.X - size.X/2 - 8
+    local y = pos.Y - size.Y/2
+
+    data.healthBg.Size = V2new(barWidth, barHeight)
+    data.healthBg.Position = V2new(x, y)
+    data.healthBg.Color = C3new(0,0,0)
+    data.healthBg.Transparency = 0.4
+    data.healthBg.Visible = true
+
+    local h = (health / maxHealth) * barHeight
+    data.healthBar.Size = V2new(barWidth, h)
+    data.healthBar.Position = V2new(x, y + barHeight - h)
+    data.healthBar.Color = GetHealthColor(self, health, maxHealth)
+    data.healthBar.Visible = true
+end
+
+function ESPModule:UpdateInfo(data, pos, size, plr, dist)
+    local yOffset = pos.Y - size.Y/2 - 18
+
+    if self.NAME_ENABLED and data.name then
+        data.name.Text = plr.Name
+        data.name.Position = V2new(pos.X, yOffset)
+        data.name.Color = self.NAME_COLOR
+        data.name.Visible = true
+        yOffset = yOffset - 16
+    else
+        if data.name then data.name.Visible = false end
+    end
+
+    if self.DISTANCE_ENABLED and data.distance then
+        data.distance.Text = mathFloor(dist) .. " studs"
+        data.distance.Position = V2new(pos.X, yOffset)
+        data.distance.Color = self.DISTANCE_COLOR
+        data.distance.Visible = true
+        yOffset = yOffset - 16
+    else
+        if data.distance then data.distance.Visible = false end
+    end
+
+    if self.WEAPON_ENABLED and data.weapon then
+        local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+        data.weapon.Text = tool and tool.Name or "None"
+        data.weapon.Position = V2new(pos.X, yOffset)
+        data.weapon.Color = self.WEAPON_COLOR
+        data.weapon.Visible = true
+    else
+        if data.weapon then data.weapon.Visible = false end
+    end
+end
+
+function ESPModule:UpdateTracer(data, pos)
+    if not self.TRACERS_ENABLED or not pos then
+        if data.tracer then data.tracer.Visible = false end
+        return
+    end
+
+    local origin
+    if self.TRACER_ORIGIN == "Bottom" then
+        origin = V2new(self.Camera.ViewportSize.X/2, self.Camera.ViewportSize.Y)
+    elseif self.TRACER_ORIGIN == "Top" then
+        origin = V2new(self.Camera.ViewportSize.X/2, 0)
+    else
+        origin = V2new(self.Camera.ViewportSize.X/2, self.Camera.ViewportSize.Y/2)
+    end
+
+    data.tracer.From = origin
+    data.tracer.To = pos
+    data.tracer.Color = self.TRACER_COLOR
+    data.tracer.Thickness = self.TRACER_THICKNESS
+    data.tracer.Visible = true
+end
+
+function ESPModule:UpdateSkeleton(data, char)
+    if not self.SKELETON_ENABLED then
+        for _, line in ipairs(data.skeleton) do if line then line.Visible = false end end
+        return
+    end
+
+    local bones = char:FindFirstChild("LowerTorso") and BONES_R15 or BONES_R6
+    local index = 1
+
+    for _, bonePair in ipairs(bones) do
+        local p1 = char:FindFirstChild(bonePair[1])
+        local p2 = char:FindFirstChild(bonePair[2])
+
+        if p1 and p2 then
+            local v1, on1 = self.Camera:WorldToViewportPoint(p1.Position)
+            local v2, on2 = self.Camera:WorldToViewportPoint(p2.Position)
+
+            if on1 and on2 and data.skeleton[index] then
+                data.skeleton[index].From = V2new(v1.X, v1.Y)
+                data.skeleton[index].To = V2new(v2.X, v2.Y)
+                data.skeleton[index].Color = self.SKELETON_COLOR
+                data.skeleton[index].Thickness = self.SKELETON_THICKNESS
+                data.skeleton[index].Visible = true
+            elseif data.skeleton[index] then
+                data.skeleton[index].Visible = false
+            end
+            index += 1
+        end
+    end
+end
+
+function ESPModule:UpdateChams(plr, char)
+    if not self.CHAMS_ENABLED then return end
+
+    local data = self._data[plr]
+    if not data then return end
+
+    if not data.chams then
+        data.chams = Instance.new("Highlight")
+        data.chams.Name = "ArcanumChams"
+        data.chams.Adornee = char
+        data.chams.Parent = self.Workspace.CurrentCamera or char
+        data.chams.DepthMode = Enum.HighlightDepthMode[self.CHAMS_DEPTH]
+        data.chams.FillColor = self.CHAMS_FILL_COLOR
+        data.chams.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        data.chams.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
+        data.chams.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
+    else
+        data.chams.FillColor = self.CHAMS_FILL_COLOR
+        data.chams.OutlineColor = self.CHAMS_OUTLINE_COLOR
+        data.chams.FillTransparency = self.CHAMS_FILL_TRANSPARENCY
+        data.chams.OutlineTransparency = self.CHAMS_OUTLINE_TRANSPARENCY
+        data.chams.DepthMode = Enum.HighlightDepthMode[self.CHAMS_DEPTH]
+    end
+end
+
+function ESPModule:CreateGhost(char)
+    local clone = char:Clone()
+    for _, obj in ipairs(clone:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.Transparency = 0.7
+            obj.Color = self.BACKTRACK_COLOR
+            obj.Material = Enum.Material.ForceField
+            obj.CanCollide = false
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+            obj:Destroy()
+        end
+    end
+    clone.Parent = self.Workspace.CurrentCamera
+    return clone
+end
+
+function ESPModule:UpdateBacktrack(plr, char)
+    if not self.BACKTRACK_ENABLED or not char then return end
+
+    local data = self._data[plr]
+    if not data then return end
+
+    local now = tick()
+    if now - data.lastTick < BT_INTERVAL then return end
+    data.lastTick = now
+
+    table.insert(data.lastPos, 1, char:GetPrimaryPartCFrame())
+    if #data.lastPos > MAX_BT then
+        table.remove(data.lastPos)
+    end
+
+    while #data.backtrack > 0 and #data.backtrack > mathFloor(self.BACKTRACK_DURATION / BT_INTERVAL) do
+        rem(table.remove(data.backtrack))
+    end
+
+    for i, cf in ipairs(data.lastPos) do
+        if not data.backtrack[i] then
+            data.backtrack[i] = self:CreateGhost(char)
+        end
+        if data.backtrack[i] then
+            data.backtrack[i].SetPrimaryPartCFrame(cf)
+            for _, part in ipairs(data.backtrack[i]:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = self.BACKTRACK_TRANSPARENCY + (i * 0.03)
+                end
+            end
+        end
+    end
+end
+
+function ESPModule:Update()
+    if not self.ESP_ENABLED then
+        for _, data in pairs(self._data) do self:HideAll(data) end
+        return
+    end
+
+    self._frame += 1
+    if self._frame % 3 ~= 0 then return end
+
+    local now = tick()
+    if now - self._playerCacheTick > self._PLAYER_CACHE_RATE then
+        self._playerCache = self.Players:GetPlayers()
+        self._playerCacheTick = now
+    end
+
+    for _, plr in ipairs(self._playerCache) do
+        if plr == self.player and not self.SELF_ESP then continue end
+        if self.TEAM_HIDE and IsTeammate(self, plr) then
+            local data = self._data[plr]
+            if data then self:HideAll(data) end
+            continue
+        end
+
+        local char = plr.Character
+        if not char or not char:FindFirstChild("Humanoid") or not char:FindFirstChild("HumanoidRootPart") then
+            local data = self._data[plr]
+            if data then self:HideAll(data) end
+            continue
+        end
+
+        local root = char.HumanoidRootPart
+        local dist = (root.Position - self.Camera.CFrame.Position).Magnitude
+        if dist > self._MAX_ESP_DIST then
+            local data = self._data[plr]
+            if data then self:HideAll(data) end
+            continue
+        end
+
+        local data = self:CreateData(plr)
+        local pos, size = GetBoundingBox(char)
+
+        if not pos then
+            self:HideAll(data)
+            continue
+        end
+
+        self:UpdateBox(data, pos, size)
+        self:UpdateHealth(data, pos, size, char.Humanoid.Health, char.Humanoid.MaxHealth)
+        self:UpdateInfo(data, pos, size, plr, dist)
+        self:UpdateTracer(data, V2new(pos.X, pos.Y + size.Y/2))
+        self:UpdateSkeleton(data, char)
+        self:UpdateChams(plr, char)
+        self:UpdateBacktrack(plr, char)
+    end
+end
+
+function ESPModule:Start()
+    self:Stop()
+
+    self._connections.update = self.RunService.RenderStepped:Connect(function()
+        self:Update()
+    end)
+
+    self._connections.playerRemoving = self.Players.PlayerRemoving:Connect(function(plr)
+        self:DestroyData(plr)
+    end)
+end
+
+function ESPModule:Stop()
+    for _, conn in pairs(self._connections) do
+        if conn then conn:Disconnect() end
+    end
+    self._connections = {}
+
+    for plr, data in pairs(self._data) do
+        self:HideAll(data)
+    end
+end
+
+function ESPModule:Destroy()
+    self:Stop()
+    for plr in pairs(self._data) do
+        self:DestroyData(plr)
+    end
+end
+
+function ESPModule:GetSettings()
+    return {
+        ESP_ENABLED = self.ESP_ENABLED,
+        SELF_ESP = self.SELF_ESP,
+        TEAM_CHECK = self.TEAM_CHECK,
+        TEAM_HIDE = self.TEAM_HIDE,
+
+        BOX_ENABLED = self.BOX_ENABLED,
+        BOX_TYPE = self.BOX_TYPE,
+        BOX_COLOR = self.BOX_COLOR,
+        BOX_FILL_ENABLED = self.BOX_FILL_ENABLED,
+        BOX_FILL_COLOR = self.BOX_FILL_COLOR,
+        BOX_FILL_TRANSPARENCY = self.BOX_FILL_TRANSPARENCY,
+
+        HEALTH_ENABLED = self.HEALTH_ENABLED,
+        HEALTH_GRADIENT = self.HEALTH_GRADIENT,
+        HEALTH_LOW_COLOR = self.HEALTH_LOW_COLOR,
+        HEALTH_HIGH_COLOR = self.HEALTH_HIGH_COLOR,
+
+        NAME_ENABLED = self.NAME_ENABLED,
+        NAME_COLOR = self.NAME_COLOR,
+        DISTANCE_ENABLED = self.DISTANCE_ENABLED,
+        DISTANCE_COLOR = self.DISTANCE_COLOR,
+        WEAPON_ENABLED = self.WEAPON_ENABLED,
+        WEAPON_COLOR = self.WEAPON_COLOR,
+
+        TRACERS_ENABLED = self.TRACERS_ENABLED,
+        TRACER_COLOR = self.TRACER_COLOR,
+        TRACER_ORIGIN = self.TRACER_ORIGIN,
+        TRACER_THICKNESS = self.TRACER_THICKNESS,
+
+        SKELETON_ENABLED = self.SKELETON_ENABLED,
+        SKELETON_COLOR = self.SKELETON_COLOR,
+        SKELETON_THICKNESS = self.SKELETON_THICKNESS,
+
+        CHAMS_ENABLED = self.CHAMS_ENABLED,
+        CHAMS_TYPE = self.CHAMS_TYPE,
+        CHAMS_OUTLINE_COLOR = self.CHAMS_OUTLINE_COLOR,
+        CHAMS_FILL_COLOR = self.CHAMS_FILL_COLOR,
+        CHAMS_FILL_TRANSPARENCY = self.CHAMS_FILL_TRANSPARENCY,
+        CHAMS_OUTLINE_TRANSPARENCY = self.CHAMS_OUTLINE_TRANSPARENCY,
+        CHAMS_DEPTH = self.CHAMS_DEPTH,
+
+        BACKTRACK_ENABLED = self.BACKTRACK_ENABLED,
+        BACKTRACK_COLOR = self.BACKTRACK_COLOR,
+        BACKTRACK_DURATION = self.BACKTRACK_DURATION,
+        BACKTRACK_TRANSPARENCY = self.BACKTRACK_TRANSPARENCY,
+    }
+end
+
+function ESPModule:ApplySettings(settings)
+    for k, v in pairs(settings) do
+        if self[k] ~= nil then
+            self[k] = v
+        end
+    end
+end
+
+return ESPModule
