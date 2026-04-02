@@ -1,0 +1,519 @@
+local VisualsModule = {}
+VisualsModule.__index = VisualsModule
+
+function VisualsModule.new(config)
+	local self = setmetatable({}, VisualsModule)
+
+	self.player = config.Player
+	self.guiParent = config.GuiParent
+	self.Services = config.Services or {}
+
+	self.Players = self.Services.Players
+	self.TweenService = self.Services.TweenService
+	self.RunService = self.Services.RunService
+	self.UserInputService = self.Services.UserInputService
+	self.ReplicatedStorage = self.Services.ReplicatedStorage
+	self.Workspace = self.Services.Workspace
+	self.Lighting = self.Services.Lighting
+	self.Debris = self.Services.Debris
+	self.SoundService = self.Services.SoundService
+	self.HttpService = self.Services.HttpService
+
+	self.Notification = config.Notification
+	self.IsFakeLagEnabled = config.IsFakeLagEnabled
+
+	self.HITLOG_ENABLED = false
+	self.HITSOUND_ENABLED = false
+	self.HITSOUND_VOLUME = 1
+	self.HITSOUND_PRESET = "bell"
+
+	self.GHOST_BASE_TRANSPARENCY = 0.7
+	self.GHOST_FADE_RADIUS = 1.6
+	self.GHOST_FADE_POWER = 1.2
+
+	self.TRACER_ENABLED = false
+	self.TRACER_COLOR = Color3.fromRGB(255, 255, 255)
+	self.TRACER_LIFETIME = 0.45
+	self.TRACER_WIDTH = 0.12
+	self.TRACER_NEON = false
+	self.TRACER_STYLE = "Classic"
+
+	self.TRACER_BRIGHTNESS = 20
+	self.TRACER_LIGHTEMISSION = 1
+	self.TRACER_LIGHTINFLUENCE = 0.95
+	self.TRACER_TAIL = 2
+	self.TRACER_TRANSPARENCY = NumberSequence.new({
+		NumberSequenceKeypoint.new(0.00, 1.00),
+		NumberSequenceKeypoint.new(0.125, 0.05),
+		NumberSequenceKeypoint.new(0.89, 0.0562),
+		NumberSequenceKeypoint.new(1.00, 1.00),
+	})
+
+	self.WALLBANG_ENABLED = false
+	self.WALLBANG_ENTRY_COLOR = Color3.fromRGB(255, 50, 50)
+	self.WALLBANG_EXIT_COLOR = Color3.fromRGB(50, 255, 50)
+	self.WALLBANG_MARKER_SIZE = Vector3.new(0.5, 0.5, 0.5)
+	self.WALLBANG_LIFETIME = 3
+
+	self.KILLFX_ENABLED = false
+	self.KILLFX_TYPE = "Sparkle"
+	self.KILLFX_COLOR = Color3.fromRGB(80, 160, 255)
+	self.KILLFX_LIGHT_COLOR = Color3.fromRGB(120, 180, 255)
+	self.KILLFX_CUSTOM_DURATION = 0.25
+	self.KILLFX_LIGHT_RANGE = 15
+	self.KILLFX_LIGHT_BRIGHTNESS = 1
+
+	self.OFFSCREEN_ENABLED = false
+	self.OFFSCREEN_COLOR = Color3.fromRGB(255, 80, 80)
+
+	self.BACKTRACK_GHOST_ENABLED = false
+	self.BACKTRACK_GHOST_COLOR = Color3.fromRGB(80, 160, 255)
+	self.BACKTRACK_GHOST_DURATION = 0.3
+
+	self.KILLIMAGE_ENABLED = false
+	self.KILLIMAGE_COLOR = Color3.fromRGB(80, 160, 255)
+	self.KILLIMAGE_FADE_IN = 0.08
+	self.KILLIMAGE_HOLD = 0.1
+	self.KILLIMAGE_FADE_OUT = 0.6
+	self.KILLIMAGE_MAX_ALPHA = 0.45
+
+	self.ATMOSPHERE_ENABLED = false
+	self.ATMOSPHERE_DENSITY = 0.3
+	self.ATMOSPHERE_OFFSET = 0.25
+	self.ATMOSPHERE_COLOR = Color3.fromRGB(200, 200, 200)
+	self.ATMOSPHERE_DECAY = Color3.fromRGB(128, 128, 128)
+	self.ATMOSPHERE_GLARE = 0.5
+	self.ATMOSPHERE_HAZE = 0.5
+
+	self.BLOOM_ENABLED = false
+	self.BLOOM_INTENSITY = 2
+	self.BLOOM_SIZE = 56
+	self.BLOOM_THRESHOLD = 0.8
+
+	self.COLOR_CORRECTION_ENABLED = false
+	self.COLOR_CORRECTION_BRIGHTNESS = 0
+	self.COLOR_CORRECTION_CONTRAST = 0
+	self.COLOR_CORRECTION_SATURATION = 0
+	self.COLOR_CORRECTION_TINT = Color3.fromRGB(255, 255, 255)
+
+	self.CHINA_HAT_ENABLED = false
+	self.CHINA_HAT_COLOR = Color3.fromRGB(255, 255, 255)
+	self._chinaHatParts = {}
+	self._chinaHatConn = nil
+
+	self.WINGS_ENABLED = false
+	self.WINGS_COLOR = Color3.fromRGB(255, 255, 255)
+	self._wingData = nil
+	self._wingConn = nil
+
+	self.AURA_ENABLED = false
+	self.AURA_COLOR = Color3.fromRGB(255, 255, 255)
+	self._auraData = nil
+	self._auraConn = nil
+
+	self.currentAuraType = nil
+
+	self.JUMP_CIRCLES_ENABLED = false
+	self.JUMP_CIRCLES_COLOR = Color3.fromRGB(255, 255, 255)
+	self._jumpConn = nil
+
+	self.HIT_MARKER_ENABLED = false
+	self._hitMarkerGui = nil
+	self._hitMarkerLines = {}
+
+	self.NEON_PLAYER_ENABLED = false
+	self.NEON_PLAYER_COLOR = Color3.fromRGB(255, 255, 255)
+	self._neonConn = nil
+	self._neonGlow = nil
+	self._origMaterials = {}
+
+	self.tracerPool = {}
+	self.MAX_TRACER_POOL = 12
+
+	self.arrows = {}
+	self.hitlogContainer = nil
+	self.hitlogOrder = 0
+
+	self._bindInputBegan = nil
+	self._bindInputEnded = nil
+
+	self.ghostModel = nil
+	self.ghostExpireAt = 0
+	self.sourceCharacter = nil
+	self.lastFakeLagState = nil
+	self.ghostParts = {}
+	self.ghostLastCFrames = {}
+	self.GHOST_SMOOTH_SPEED = 45
+	self._hbLast = tick()
+	self._ghostDt = 1 / 60
+
+	self.killImage = nil
+
+	self:Initialize()
+
+	return self
+end
+
+function VisualsModule:Initialize()
+	self.Camera = self.Workspace.CurrentCamera
+	self.FX_ROOT = self.ReplicatedStorage:WaitForChild("FXTemplates")
+	local playerGui = self.player:FindFirstChildOfClass("PlayerGui")
+	if playerGui then
+		local sg = playerGui:FindFirstChild("ScreenGui")
+		if sg then
+			self.HITSOUND_STORAGE = sg:FindFirstChild("storage")
+		end
+	end
+
+	self.ORIGINAL_EFFECTS = {
+		Atmosphere = self:SnapshotFirstEffect("Atmosphere"),
+		BloomEffect = self:SnapshotFirstEffect("BloomEffect"),
+		ColorCorrectionEffect = self:SnapshotFirstEffect("ColorCorrectionEffect"),
+	}
+
+	self:CreateHitlogUI()
+	self:CreateOffscreenArrows()
+	self:CreateKillImageGUI()
+	self:CreateHitMarkerUI()
+	self:SetupBacktrackGhost()
+	self:SetupKillFXListener()
+	self:SetupPlayerEffects()
+end
+
+function VisualsModule:CreateHitlogUI()
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "Hitlogs"
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.Parent = self.guiParent
+
+	local container = Instance.new("Frame")
+	container.Name = "HitlogList"
+	container.Active = false
+	container.Selectable = false
+	container.Size = UDim2.new(0, 300, 0, 200)
+	container.Position = UDim2.new(0.5, -150, 0.55, 20)
+	container.AnchorPoint = Vector2.new(0, 0)
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+	container.Parent = screenGui
+
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Padding = UDim.new(0, 2)
+	listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+	listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	listLayout.Parent = container
+
+	self.hitlogContainer = container
+	self.hitlogOrder = 0
+end
+
+function VisualsModule:SpawnWings()
+	self:DestroyWings()
+	local char = self.player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+	local hrp = char.HumanoidRootPart
+
+	local wingModel = Instance.new("Model")
+	wingModel.Name = "EnhancedAngelWings"
+
+	local leftWing = Instance.new("Part")
+	leftWing.Name = "LeftWing"
+	leftWing.Size = Vector3.new(0.2, 4, 6)
+	leftWing.Transparency = 0.1
+	leftWing.Material = Enum.Material.ForceField
+	leftWing.Color = self.WINGS_COLOR
+	leftWing.CanCollide = false
+	leftWing.Anchored = false
+	leftWing.Parent = wingModel
+
+	local rightWing = leftWing:Clone()
+	rightWing.Name = "RightWing"
+	rightWing.Parent = wingModel
+
+	local weldLeft = Instance.new("WeldConstraint")
+	weldLeft.Part0 = hrp
+	weldLeft.Part1 = leftWing
+	weldLeft.Parent = leftWing
+
+	local weldRight = weldLeft:Clone()
+	weldRight.Part1 = rightWing
+	weldRight.Parent = rightWing
+
+	for i = 1, 12 do
+		local feather = Instance.new("Part")
+		feather.Size = Vector3.new(0.15, 0.8 + math.random(), 2.5)
+		feather.Transparency = 0.3
+		feather.Material = Enum.Material.Neon
+		feather.Color = self.WINGS_COLOR:Lerp(Color3.new(1,1,1), 0.4)
+		feather.CanCollide = false
+		feather.Parent = wingModel
+
+		local fw = Instance.new("WeldConstraint")
+		fw.Part0 = leftWing
+		fw.Part1 = feather
+		fw.Parent = feather
+
+		feather.CFrame = leftWing.CFrame * CFrame.new(-1.2, -2 + i*0.6, 0) * CFrame.Angles(0, 0, math.rad(30 + i*5))
+	end
+
+	for i = 1, 12 do
+		local feather = Instance.new("Part")
+		feather.Size = Vector3.new(0.15, 0.8 + math.random(), 2.5)
+		feather.Transparency = 0.3
+		feather.Material = Enum.Material.Neon
+		feather.Color = self.WINGS_COLOR:Lerp(Color3.new(1,1,1), 0.4)
+		feather.CanCollide = false
+		feather.Parent = wingModel
+
+		local fw = Instance.new("WeldConstraint")
+		fw.Part0 = rightWing
+		fw.Part1 = feather
+		fw.Parent = feather
+
+		feather.CFrame = rightWing.CFrame * CFrame.new(1.2, -2 + i*0.6, 0) * CFrame.Angles(0, 0, math.rad(-30 - i*5))
+	end
+
+	local particles = Instance.new("ParticleEmitter")
+	particles.Texture = "rbxassetid://243660364"
+	particles.Color = ColorSequence.new(self.WINGS_COLOR)
+	particles.LightEmission = 1
+	particles.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 0)})
+	particles.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)})
+	particles.Lifetime = NumberRange.new(1.2, 2.5)
+	particles.Rate = 80
+	particles.Speed = NumberRange.new(2, 6)
+	particles.SpreadAngle = Vector2.new(40, 40)
+	particles.Parent = leftWing
+
+	local particles2 = particles:Clone()
+	particles2.Parent = rightWing
+
+	local trailL = Instance.new("Trail")
+	trailL.Color = ColorSequence.new(self.WINGS_COLOR)
+	trailL.LightEmission = 1
+	trailL.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1)})
+	trailL.Lifetime = 1.8
+	trailL.Attachment0 = Instance.new("Attachment", leftWing)
+	trailL.Attachment1 = Instance.new("Attachment", leftWing)
+	trailL.Attachment1.Position = Vector3.new(0, 3, 0)
+	trailL.Parent = leftWing
+
+	local trailR = trailL:Clone()
+	trailR.Parent = rightWing
+
+	local glow = Instance.new("PointLight")
+	glow.Color = self.WINGS_COLOR
+	glow.Range = 25
+	glow.Brightness = 3.5
+	glow.Shadows = false
+	glow.Parent = hrp
+
+	self._wingData = {
+		model = wingModel,
+		allParts = {leftWing, rightWing},
+		allTrails = {trailL, trailR},
+		particles = particles,
+		glow = glow
+	}
+
+	wingModel.Parent = char
+
+	self._wingConn = self.RunService.Heartbeat:Connect(function(dt)
+		if not char.Parent or not leftWing.Parent then
+			self:DestroyWings()
+			return
+		end
+
+		local sway = math.sin(tick() * 4) * 0.15
+		leftWing.CFrame = hrp.CFrame * CFrame.new(-2, 0.5, -1) * CFrame.Angles(math.rad(15 + sway*20), math.rad(-35), math.rad(10))
+		rightWing.CFrame = hrp.CFrame * CFrame.new(2, 0.5, -1) * CFrame.Angles(math.rad(15 - sway*20), math.rad(35), math.rad(-10))
+	end)
+end
+
+function VisualsModule:DestroyWings()
+	if self._wingConn then
+		self._wingConn:Disconnect()
+		self._wingConn = nil
+	end
+	if self._wingData and self._wingData.model then
+		self._wingData.model:Destroy()
+		self._wingData = nil
+	end
+end
+
+local auraAssets = {
+	starlight = "rbxassetid://134645216613107",
+	heavenly = "rbxassetid://139300897520961",
+	ribbon = "rbxassetid://132069507632161",
+	sakura = "rbxassetid://81755778619404",
+	angel = "rbxassetid://97658130917593",
+	wind = "rbxassetid://80694081850877",
+	flow = "rbxassetid://119913533725648",
+	star = "rbxassetid://73754563740680"
+}
+
+function VisualsModule:SpawnAura(auraType)
+	self:DestroyAura()
+	if not auraType or not auraAssets[auraType] then return end
+
+	local char = self.player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+	local hrp = char.HumanoidRootPart
+
+	local auraFolder = Instance.new("Folder")
+	auraFolder.Name = "JujuAura_" .. auraType
+
+	local mainEffect = game:GetObjects(auraAssets[auraType])[1]:Clone()
+	mainEffect.Parent = auraFolder
+
+	local centerOrb = Instance.new("Part")
+	centerOrb.Name = "AuraCore"
+	centerOrb.Shape = Enum.PartType.Ball
+	centerOrb.Size = Vector3.new(3, 3, 3)
+	centerOrb.Material = Enum.Material.Neon
+	centerOrb.Color = self.AURA_COLOR
+	centerOrb.Transparency = 0.2
+	centerOrb.CanCollide = false
+	centerOrb.Anchored = false
+	centerOrb.Parent = auraFolder
+
+	local coreLight = Instance.new("PointLight")
+	coreLight.Color = self.AURA_COLOR
+	coreLight.Range = 40
+	coreLight.Brightness = 7
+	coreLight.Parent = centerOrb
+
+	local coreTrail = Instance.new("Trail")
+	coreTrail.Color = ColorSequence.new(self.AURA_COLOR)
+	coreTrail.LightEmission = 1
+	coreTrail.Lifetime = 1.4
+	coreTrail.Parent = centerOrb
+
+	for _, obj in ipairs(auraFolder:GetChildren()) do
+		if obj:IsA("BasePart") then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = hrp
+			weld.Part1 = obj
+			weld.Parent = obj
+		elseif obj:IsA("Model") then
+			local mainPart = obj:FindFirstChildWhichIsA("BasePart")
+			if mainPart then
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = hrp
+				weld.Part1 = mainPart
+				weld.Parent = mainPart
+			end
+		end
+	end
+
+	self._auraConn = self.RunService.Heartbeat:Connect(function()
+		if not char.Parent or not auraFolder.Parent then
+			self:DestroyAura()
+			return
+		end
+
+		local pulse = 1 + math.sin(tick() * 3.5) * 0.15
+		centerOrb.Size = Vector3.new(3 * pulse, 3 * pulse, 3 * pulse)
+
+		for _, obj in ipairs(auraFolder:GetChildren()) do
+			if obj:IsA("BasePart") and obj ~= centerOrb then
+				obj.CFrame = hrp.CFrame * CFrame.Angles(0, tick() * 2.2, 0)
+			elseif obj:IsA("Model") then
+				obj:PivotTo(hrp.CFrame * CFrame.Angles(0, tick() * 1.8, 0))
+			end
+		end
+	end)
+
+	self._auraData = {
+		folder = auraFolder,
+		core = centerOrb,
+		type = auraType
+	}
+
+	auraFolder.Parent = char
+end
+
+function VisualsModule:DestroyAura()
+	if self._auraConn then
+		self._auraConn:Disconnect()
+		self._auraConn = nil
+	end
+	if self._auraData and self._auraData.folder then
+		self._auraData.folder:Destroy()
+		self._auraData = nil
+	end
+end
+
+function VisualsModule:SetWingsEnabled(value)
+	self.WINGS_ENABLED = value
+	if value then
+		self:SpawnWings()
+	else
+		self:DestroyWings()
+	end
+end
+
+function VisualsModule:SetWingsColor(value)
+	self.WINGS_COLOR = value
+	if self._wingData then
+		for _, p in ipairs(self._wingData.allParts or {}) do
+			if p and p.Parent then p.Color = value end
+		end
+		for _, trail in ipairs(self._wingData.allTrails or {}) do
+			if trail then trail.Color = ColorSequence.new(value) end
+		end
+		if self._wingData.glow then self._wingData.glow.Color = value end
+		if self._wingData.particles then
+			self._wingData.particles.Color = ColorSequence.new(value)
+		end
+	end
+end
+
+function VisualsModule:SetAuraEnabled(value)
+	self.AURA_ENABLED = value
+	if value then
+		local auraKeys = {}
+		for k in pairs(auraAssets) do
+			table.insert(auraKeys, k)
+		end
+		if #auraKeys > 0 then
+			local randomIndex = math.random(1, #auraKeys)
+			local chosen = auraKeys[randomIndex]
+			self.currentAuraType = chosen
+			self:SpawnAura(chosen)
+		end
+	else
+		self:DestroyAura()
+		self.currentAuraType = nil
+	end
+end
+
+function VisualsModule:SetAuraColor(value)
+	self.AURA_COLOR = value
+	if self._auraData then
+		local function recolor(obj)
+			if obj:IsA("BasePart") then
+				obj.Color = value
+				local light = obj:FindFirstChildOfClass("PointLight")
+				if light then light.Color = value end
+			elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+				obj.Color = ColorSequence.new(value)
+			end
+		end
+		for _, child in ipairs(self._auraData.folder:GetDescendants()) do
+			recolor(child)
+		end
+	end
+end
+
+function VisualsModule:SetSpecificAura(auraType)
+	if not auraAssets[auraType] then return end
+	self.currentAuraType = auraType
+	self:SpawnAura(auraType)
+end
+
+return VisualsModule
