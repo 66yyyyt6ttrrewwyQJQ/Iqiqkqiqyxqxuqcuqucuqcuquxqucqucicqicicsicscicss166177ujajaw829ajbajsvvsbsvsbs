@@ -1,0 +1,918 @@
+// ==UserScript==
+// @name         Roblox LARP
+// @namespace    http://tampermonkey.net/
+// @version      2.0
+// @description  Advanced Roblox profile customizer with avatar copying and premium UI
+// @author       zaitheskid
+// @match        https://*.roblox.com/*
+// @match        https://roblox.com/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      roblox.com
+// @connect      rbxcdn.com
+// @connect      thumbnails.roblox.com
+// @connect      catalog.roblox.com
+// @connect      inventory.roblox.com
+// @run-at       document-start
+// ==/UserScript==
+
+(function () {
+    'use strict';
+    const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    
+    const style = document.createElement('style');
+    style.id = 'larp-core-styles';
+    style.innerHTML = `
+        [data-testid="nav-robux-amount"]:not(.larp-faked),
+        #nav-robux-amount:not(.larp-faked),
+        .robux-amount:not(.larp-faked),
+        .balance-value:not(.larp-faked) {
+            visibility: hidden !important;
+        }
+        .larp-faked { visibility: visible !important; }
+        
+        @keyframes larpFloat {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
+            100% { transform: translateY(0px); }
+        }
+        @keyframes larpPulse {
+            0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(168, 85, 247, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+        }
+        @keyframes larpGlow {
+            0% { border-color: #a855f7; box-shadow: 0 0 5px rgba(168, 85, 247, 0.3); }
+            50% { border-color: #d8b4fe; box-shadow: 0 0 20px rgba(168, 85, 247, 0.6); }
+            100% { border-color: #a855f7; box-shadow: 0 0 5px rgba(168, 85, 247, 0.3); }
+        }
+        @keyframes larpSlideIn {
+            from { opacity: 0; transform: translate(-50%, -45%) scale(0.95); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes larpSpin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes larpRipple {
+            0% { transform: scale(0); opacity: 0.5; }
+            100% { transform: scale(4); opacity: 0; }
+        }
+        
+        .larp-glow-text {
+            text-shadow: 0 0 10px #a855f7, 0 0 20px #7c3aed, 0 0 30px #4c1d95;
+        }
+        .larp-gradient-border {
+            position: relative;
+            background: linear-gradient(135deg, #0a0a0a 0%, #0f0f1a 100%);
+            border-radius: 24px;
+        }
+        .larp-gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            background: linear-gradient(135deg, #a855f7, #7c3aed, #4c1d95, #a855f7);
+            border-radius: 25px;
+            z-index: -1;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+        }
+        .larp-gradient-border:hover::before { opacity: 1; }
+        
+        .larp-btn-primary {
+            background: linear-gradient(135deg, #a855f7 0%, #7c3aed 50%, #6d28d9 100%);
+            border: none;
+            color: white;
+            font-weight: 800;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        .larp-btn-primary::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255,255,255,0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        .larp-btn-primary:active::after {
+            width: 300px;
+            height: 300px;
+        }
+        .larp-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(124, 58, 237, 0.5);
+        }
+        
+        .larp-input-modern {
+            background: rgba(20, 20, 30, 0.9);
+            border: 1px solid #2a2a3a;
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            transition: all 0.3s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .larp-input-modern:focus {
+            outline: none;
+            border-color: #a855f7;
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+            background: rgba(25, 25, 35, 0.95);
+        }
+        
+        .larp-checkbox-glow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(15, 15, 25, 0.8);
+            border-radius: 12px;
+            border: 1px solid #2a2a3a;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .larp-checkbox-glow:hover {
+            border-color: #a855f7;
+            background: rgba(25, 25, 35, 0.9);
+            transform: translateX(4px);
+        }
+        
+        .larp-tab-glow {
+            flex: 1;
+            padding: 14px 0;
+            text-align: center;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            color: #666;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .larp-tab-glow:hover { color: #c084fc; }
+        .larp-tab-glow.active {
+            color: #a855f7;
+            background: linear-gradient(180deg, rgba(168,85,247,0.1) 0%, transparent 100%);
+        }
+        .larp-tab-glow.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 20%;
+            width: 60%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #a855f7, #c084fc, #a855f7, transparent);
+            border-radius: 3px;
+            box-shadow: 0 0 8px #a855f7;
+        }
+        
+        .larp-card {
+            background: linear-gradient(135deg, rgba(15,15,25,0.9) 0%, rgba(10,10,18,0.95) 100%);
+            border-radius: 16px;
+            border: 1px solid rgba(168,85,247,0.2);
+            transition: all 0.3s;
+        }
+        .larp-card:hover {
+            border-color: rgba(168,85,247,0.5);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .larp-toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: linear-gradient(135deg, #1a1a2e, #0f0f1a);
+            border-left: 4px solid #a855f7;
+            padding: 12px 20px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            z-index: 2147483647;
+            animation: larpSlideInToast 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+        @keyframes larpSlideInToast {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .larp-loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(168,85,247,0.3);
+            border-top-color: #a855f7;
+            border-radius: 50%;
+            animation: larpSpin 0.8s linear infinite;
+        }
+        
+        #larp-menu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 460px;
+            max-height: 85vh;
+            background: linear-gradient(135deg, #0a0a0f 0%, #0d0d15 100%);
+            border-radius: 28px;
+            z-index: 2147483647;
+            display: none;
+            font-family: 'Segoe UI', 'Poppins', system-ui, -apple-system, sans-serif;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(168,85,247,0.2), 0 0 40px rgba(168,85,247,0.15);
+            backdrop-filter: blur(2px);
+            overflow: hidden;
+            animation: larpSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        #larp-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
+            z-index: 2147483646;
+            display: none;
+            transition: opacity 0.3s;
+        }
+        
+        .snowflake {
+            position: fixed;
+            top: -10px;
+            color: rgba(168,85,247,0.6);
+            font-size: 1em;
+            user-select: none;
+            z-index: 2147483647;
+            pointer-events: none;
+            animation: fall linear infinite;
+        }
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(360deg); opacity: 0.2; }
+        }
+        
+        .larp-avatar-preview {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #a855f7;
+            box-shadow: 0 0 15px rgba(168,85,247,0.5);
+            transition: all 0.3s;
+        }
+        .larp-avatar-preview:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(168,85,247,0.8);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1a1a2a;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #a855f7;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #c084fc;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+
+    const defaultConfig = {
+        username: 'Ledgers',
+        handle: '@god',
+        robux: '1,000,000',
+        followers: '14.2K',
+        following: '0',
+        premium: true,
+        limiteds: [],
+        hideFloatingButton: false,
+        currencyPurchases: '',
+        purchasedHistory: [],
+        showFullAmount: false,
+        randomize: false,
+        copiedAvatarUrl: '',
+        copiedAvatarUserId: ''
+    };
+
+    let config = GM_getValue('larp_config_v2', defaultConfig);
+    const saveConfig = () => GM_setValue('larp_config_v2', config);
+
+    if (!config.handle) config.handle = '@' + (config.username || "User");
+    if (config.followers === undefined) config.followers = "14K";
+    if (config.following === undefined) config.following = "0";
+    if (config.currencyPurchases === undefined) config.currencyPurchases = "";
+    if (config.purchasedHistory === undefined) config.purchasedHistory = [];
+    if (config.showFullAmount === undefined) config.showFullAmount = false;
+    if (config.randomize === undefined) config.randomize = false;
+    if (config.copiedAvatarUrl === undefined) config.copiedAvatarUrl = '';
+    if (config.copiedAvatarUserId === undefined) config.copiedAvatarUserId = '';
+
+    let menu, gearBtn, overlay, currentAudio = null;
+
+    const showToast = (message, isError = false) => {
+        const existing = document.querySelector('.larp-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'larp-toast';
+        toast.style.borderLeftColor = isError ? '#ef4444' : '#a855f7';
+        toast.innerHTML = `<span style="color:${isError ? '#ef4444' : '#a855f7'}">${isError ? '⚠️' : '✓'}</span> ${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+
+    const playWeilandBluebands = () => {
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio.remove();
+        }
+        const audio = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+        audio.volume = 0.3;
+        audio.loop = true;
+        audio.play().catch(e => console.log('Audio play failed:', e));
+        currentAudio = audio;
+    };
+
+    const stopAudio = () => {
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio.remove();
+            currentAudio = null;
+        }
+    };
+
+    const copyAvatarFromUser = async (userId) => {
+        if (!userId) {
+            showToast('Please enter a valid user ID or username', true);
+            return false;
+        }
+        showToast('Fetching avatar data...');
+        try {
+            let resolvedId = userId;
+            if (isNaN(userId)) {
+                const userRes = await new Promise(r => GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(userId)}&limit=1`,
+                    onload: r
+                }));
+                const userData = JSON.parse(userRes.responseText);
+                if (userData.data && userData.data.length > 0) {
+                    resolvedId = userData.data[0].id;
+                } else {
+                    showToast('User not found', true);
+                    return false;
+                }
+            }
+            
+            const avatarRes = await new Promise(r => GM_xmlhttpRequest({
+                method: "GET",
+                url: `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${resolvedId}&size=420x420&format=Png&isCircular=false`,
+                onload: r
+            }));
+            const avatarData = JSON.parse(avatarRes.responseText);
+            const avatarUrl = avatarData.data?.[0]?.imageUrl;
+            
+            if (avatarUrl) {
+                config.copiedAvatarUrl = avatarUrl;
+                config.copiedAvatarUserId = resolvedId.toString();
+                saveConfig();
+                
+                const avatarImg = document.getElementById('larp-avatar-preview-img');
+                if (avatarImg) avatarImg.src = avatarUrl;
+                showToast(`Avatar copied from user ${resolvedId}!`);
+                return true;
+            } else {
+                showToast('Could not fetch avatar image', true);
+                return false;
+            }
+        } catch (e) {
+            showToast('Error fetching avatar: ' + e.message, true);
+            return false;
+        }
+    };
+
+    const applyCopiedAvatar = () => {
+        if (!config.copiedAvatarUrl) return;
+        const avatarImgs = document.querySelectorAll('.avatar-headshot-img, .avatar-card-image img, .avatar-view img, .profile-avatar img, .avatar-headshot-thumbnail img');
+        avatarImgs.forEach(img => {
+            if (img.src && !img.src.includes('larp-copied')) {
+                img.src = config.copiedAvatarUrl;
+                img.setAttribute('larp-copied', 'true');
+            }
+        });
+        const avatarDivs = document.querySelectorAll('.avatar-headshot, .avatar-card-link .thumbnail-2d-container');
+        avatarDivs.forEach(div => {
+            if (!div.querySelector('img[larp-copied]')) {
+                const newImg = document.createElement('img');
+                newImg.src = config.copiedAvatarUrl;
+                newImg.style.width = '100%';
+                newImg.style.height = '100%';
+                newImg.style.objectFit = 'cover';
+                newImg.setAttribute('larp-copied', 'true');
+                div.appendChild(newImg);
+            }
+        });
+    };
+
+    const createUI = () => {
+        if (document.getElementById('larp-menu')) return;
+
+        overlay = document.createElement('div');
+        overlay.id = 'larp-overlay';
+        document.body.appendChild(overlay);
+
+        for(let i = 0; i < 40; i++) {
+            const s = document.createElement('div');
+            s.className = 'snowflake';
+            s.innerHTML = ['❄', '✨', '💜', '⭐'][Math.floor(Math.random() * 4)];
+            s.style.left = Math.random() * 100 + 'vw';
+            s.style.animationDuration = (Math.random() * 4 + 2) + 's';
+            s.style.opacity = Math.random() * 0.6 + 0.2;
+            s.style.fontSize = (Math.random() * 12 + 8) + 'px';
+            s.style.animationDelay = Math.random() * 5 + 's';
+            overlay.appendChild(s);
+        }
+
+        menu = document.createElement('div');
+        menu.id = 'larp-menu';
+        
+        menu.innerHTML = `
+            <div style="background: linear-gradient(135deg, #0a0a0f 0%, #0d0d1a 100%); padding: 24px 20px; text-align: center; border-bottom: 1px solid rgba(168,85,247,0.2); position: relative; overflow: hidden;">
+                <div style="position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(168,85,247,0.08) 0%, transparent 70%); pointer-events: none;"></div>
+                <h1 style="margin: 0; font-size: 28px; letter-spacing: 4px; background: linear-gradient(135deg, #fff 0%, #a855f7 50%, #c084fc 100%); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 900; text-transform: uppercase;">ROBLOX LARP</h1>
+                <p style="margin: 8px 0 0; font-size: 10px; color: #a855f7; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;">by zaitheskid</p>
+                <div style="margin-top: 12px; display: flex; justify-content: center; gap: 8px;">
+                    <span style="background: rgba(168,85,247,0.2); padding: 4px 10px; border-radius: 20px; font-size: 9px; color: #c084fc;">✦ PREMIUM ✦</span>
+                    <span style="background: rgba(168,85,247,0.2); padding: 4px 10px; border-radius: 20px; font-size: 9px; color: #c084fc;">🎵 BLUEBANDS 🎵</span>
+                </div>
+            </div>
+            
+            <div style="display: flex; background: rgba(5,5,10,0.8); border-bottom: 1px solid rgba(168,85,247,0.15); padding: 0 8px;">
+                <div class="larp-tab-glow active" data-tab="profile">👤 PROFILE</div>
+                <div class="larp-tab-glow" data-tab="robux">💰 ROBUX</div>
+                <div class="larp-tab-glow" data-tab="limiteds">✨ LIMITEDS</div>
+                <div class="larp-tab-glow" data-tab="avatar">🎭 AVATAR</div>
+                <div class="larp-tab-glow" data-tab="settings">⚙️ SETTINGS</div>
+            </div>
+            
+            <div style="padding: 20px; max-height: 55vh; overflow-y: auto;">
+                <div id="tab-profile" class="larp-content active" style="display: block;">
+                    <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+                        <div style="position: relative;">
+                            <img id="larp-avatar-preview-img" src="${config.copiedAvatarUrl || 'https://www.roblox.com/asset-thumbnail/image?assetId=0&width=100&height=100&format=png'}" class="larp-avatar-preview" style="width: 80px; height: 80px;">
+                            <div style="position: absolute; bottom: -5px; right: -5px; background: #a855f7; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px;">👑</div>
+                        </div>
+                    </div>
+                    <div class="larp-input-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800; letter-spacing: 1px;">DISPLAY NAME</label>
+                        <input type="text" id="larp-user" class="larp-input-modern" value="${config.username.replace(/"/g, '&quot;')}">
+                    </div>
+                    <div class="larp-input-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800; letter-spacing: 1px;">USERNAME / HANDLE</label>
+                        <input type="text" id="larp-handle" class="larp-input-modern" value="${config.handle.replace(/"/g, '&quot;')}">
+                    </div>
+                    <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                        <div class="larp-input-group" style="flex: 1;">
+                            <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800;">FOLLOWERS</label>
+                            <input type="text" id="larp-followers" class="larp-input-modern" value="${config.followers}">
+                        </div>
+                        <div class="larp-input-group" style="flex: 1;">
+                            <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800;">FOLLOWING</label>
+                            <input type="text" id="larp-following" class="larp-input-modern" value="${config.following}">
+                        </div>
+                    </div>
+                    <div class="larp-checkbox-glow" id="larp-premium-toggle" style="margin-top: 8px;">
+                        <div style="width: 20px; height: 20px; border-radius: 6px; background: ${config.premium ? '#a855f7' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${config.premium ? '#a855f7' : '#333'}; display: flex; align-items: center; justify-content: center;">
+                            ${config.premium ? '✓' : ''}
+                        </div>
+                        <span style="font-size: 13px; font-weight: 600;">✨ Enable Premium Badge Override</span>
+                        <input type="checkbox" id="larp-premium" ${config.premium ? 'checked' : ''} style="display: none;">
+                    </div>
+                </div>
+                
+                <div id="tab-robux" class="larp-content" style="display: none;">
+                    <div class="larp-input-group" style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800;">💰 ROBUX BALANCE</label>
+                        <input type="text" id="larp-rbx" class="larp-input-modern" value="${config.robux}" style="font-size: 20px; font-weight: 900; color: #fbbf24;">
+                    </div>
+                    <div class="larp-input-group" style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 10px; color: #a855f7; margin-bottom: 6px; font-weight: 800;">📊 CURRENCY PURCHASES</label>
+                        <input type="text" id="larp-sales" class="larp-input-modern" value="${config.currencyPurchases}" placeholder="Syncs with balance if empty">
+                    </div>
+                    <div class="larp-checkbox-glow" id="larp-full-rbx-toggle" style="margin-bottom: 12px;">
+                        <div style="width: 20px; height: 20px; border-radius: 6px; background: ${config.showFullAmount ? '#a855f7' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${config.showFullAmount ? '#a855f7' : '#333'}; display: flex; align-items: center; justify-content: center;">
+                            ${config.showFullAmount ? '✓' : ''}
+                        </div>
+                        <span style="font-size: 13px;">🔢 Show Full Amount (No Shorthand)</span>
+                        <input type="checkbox" id="larp-full-rbx" ${config.showFullAmount ? 'checked' : ''} style="display: none;">
+                    </div>
+                    <div class="larp-checkbox-glow" id="larp-randomize-toggle">
+                        <div style="width: 20px; height: 20px; border-radius: 6px; background: ${config.randomize ? '#a855f7' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${config.randomize ? '#a855f7' : '#333'}; display: flex; align-items: center; justify-content: center;">
+                            ${config.randomize ? '✓' : ''}
+                        </div>
+                        <span style="font-size: 13px;">🎲 Realistic Jitter (Randomize thousands)</span>
+                        <input type="checkbox" id="larp-randomize" ${config.randomize ? 'checked' : ''} style="display: none;">
+                    </div>
+                    <div class="larp-card" style="margin-top: 20px; padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 11px; color: #888; font-weight: 600;">PREVIEW BALANCE</span>
+                            <span id="larp-robux-preview" style="font-size: 22px; font-weight: 900; color: #fbbf24; text-shadow: 0 0 10px rgba(251,191,36,0.3);">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="tab-limiteds" class="larp-content" style="display: none;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+                        <input type="text" id="larp-lim-url" class="larp-input-modern" placeholder="https://roblox.com/catalog/... or asset ID" style="flex: 1;">
+                        <button id="larp-add-lim" class="larp-btn-primary" style="padding: 0 20px; border-radius: 12px;">+ ADD</button>
+                    </div>
+                    <div id="larp-limiteds-list" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+                
+                <div id="tab-avatar" class="larp-content" style="display: none;">
+                    <div class="larp-card" style="padding: 20px; margin-bottom: 20px; text-align: center;">
+                        <div style="display: flex; justify-content: center; margin-bottom: 16px;">
+                            <img id="larp-avatar-preview-big" src="${config.copiedAvatarUrl || 'https://www.roblox.com/asset-thumbnail/image?assetId=0&width=100&height=100&format=png'}" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #a855f7; box-shadow: 0 0 25px rgba(168,85,247,0.5);">
+                        </div>
+                        <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+                            <input type="text" id="larp-avatar-userid" class="larp-input-modern" placeholder="User ID or Username" style="flex: 1;">
+                            <button id="larp-copy-avatar-btn" class="larp-btn-primary" style="padding: 0 20px;">COPY</button>
+                        </div>
+                        <button id="larp-apply-avatar-btn" class="larp-btn-primary" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #7c3aed, #a855f7);">🎭 APPLY COPIED AVATAR TO PAGE</button>
+                        <p style="font-size: 10px; color: #666; margin-top: 12px;">Copy any user's avatar to replace profile pictures on your current page</p>
+                    </div>
+                </div>
+                
+                <div id="tab-settings" class="larp-content" style="display: none;">
+                    <div class="larp-checkbox-glow" id="larp-hide-btn-toggle" style="margin-bottom: 20px;">
+                        <div style="width: 20px; height: 20px; border-radius: 6px; background: ${config.hideFloatingButton ? '#a855f7' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${config.hideFloatingButton ? '#a855f7' : '#333'}; display: flex; align-items: center; justify-content: center;">
+                            ${config.hideFloatingButton ? '✓' : ''}
+                        </div>
+                        <span style="font-size: 13px;">🔘 Hide Floating Menu Button</span>
+                        <input type="checkbox" id="larp-hide-btn" ${config.hideFloatingButton ? 'checked' : ''} style="display: none;">
+                    </div>
+                    <div class="larp-card" style="padding: 16px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                            <span style="font-size: 20px;">🎵</span>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 700; font-size: 13px;">Weiland - Bluebands</div>
+                                <div style="font-size: 10px; color: #888;">Background music when menu is open</div>
+                            </div>
+                            <button id="larp-play-music" class="larp-btn-primary" style="padding: 8px 16px; font-size: 11px;">PLAY</button>
+                            <button id="larp-stop-music" class="larp-btn-primary" style="padding: 8px 16px; font-size: 11px; background: #333;">STOP</button>
+                        </div>
+                    </div>
+                    <button id="larp-reset" class="larp-btn-primary" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #ef4444, #dc2626); margin-bottom: 12px;">🗑️ RESET ALL SETTINGS</button>
+                    <div style="font-size: 9px; text-align: center; color: #444; margin-top: 16px;">
+                        made with 💜 by zaitheskid on discord
+                    </div>
+                </div>
+            </div>
+            
+            <button id="larp-save" class="larp-btn-primary" style="width: calc(100% - 40px); margin: 0 20px 24px 20px; padding: 16px; font-size: 14px; letter-spacing: 2px;">💾 COMMIT CHANGES & RELOAD</button>
+        `;
+        
+        document.body.appendChild(menu);
+
+        gearBtn = document.createElement('button');
+        gearBtn.id = 'larp-gear-btn';
+        gearBtn.innerHTML = '✨';
+        Object.assign(gearBtn.style, {
+            position: 'fixed', bottom: '25px', left: '25px', zIndex: '2147483646',
+            width: '52px', height: '52px', background: 'linear-gradient(135deg, #a855f7 0%, #6d28d9 100%)',
+            color: '#fff', border: 'none', borderRadius: '16px', cursor: 'pointer',
+            fontSize: '24px', boxShadow: '0 10px 30px rgba(124, 58, 237, 0.5)',
+            display: config.hideFloatingButton ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.3s'
+        });
+        gearBtn.onmouseenter = () => {
+            gearBtn.style.transform = 'scale(1.1) rotate(15deg)';
+            gearBtn.style.boxShadow = '0 15px 40px rgba(124, 58, 237, 0.7)';
+        };
+        gearBtn.onmouseleave = () => {
+            gearBtn.style.transform = 'scale(1) rotate(0deg)';
+            gearBtn.style.boxShadow = '0 10px 30px rgba(124, 58, 237, 0.5)';
+        };
+        gearBtn.onclick = () => {
+            const isHidden = menu.style.display === 'none';
+            menu.style.display = isHidden ? 'block' : 'none';
+            overlay.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) playWeilandBluebands();
+            else stopAudio();
+        };
+        document.body.appendChild(gearBtn);
+
+        menu.querySelectorAll('.larp-tab-glow').forEach(tab => {
+            tab.onclick = () => {
+                menu.querySelectorAll('.larp-tab-glow').forEach(t => t.classList.remove('active'));
+                menu.querySelectorAll('.larp-content').forEach(c => c.style.display = 'none');
+                tab.classList.add('active');
+                const content = menu.querySelector('#tab-' + tab.dataset.tab);
+                if (content) content.style.display = 'block';
+            };
+        });
+
+        const setupCheckboxToggle = (toggleId, checkboxId) => {
+            const toggle = document.getElementById(toggleId);
+            const checkbox = document.getElementById(checkboxId);
+            if (toggle && checkbox) {
+                toggle.onclick = () => {
+                    checkbox.checked = !checkbox.checked;
+                    const indicator = toggle.querySelector('div:first-child');
+                    if (indicator) {
+                        indicator.style.background = checkbox.checked ? '#a855f7' : 'rgba(255,255,255,0.1)';
+                        indicator.style.borderColor = checkbox.checked ? '#a855f7' : '#333';
+                        indicator.innerHTML = checkbox.checked ? '✓' : '';
+                    }
+                };
+            }
+        };
+        setupCheckboxToggle('larp-premium-toggle', 'larp-premium');
+        setupCheckboxToggle('larp-full-rbx-toggle', 'larp-full-rbx');
+        setupCheckboxToggle('larp-randomize-toggle', 'larp-randomize');
+        setupCheckboxToggle('larp-hide-btn-toggle', 'larp-hide-btn');
+
+        document.getElementById('larp-save').onclick = () => {
+            config.username = document.getElementById('larp-user').value;
+            config.handle = document.getElementById('larp-handle').value;
+            config.followers = document.getElementById('larp-followers').value;
+            config.following = document.getElementById('larp-following').value;
+            config.robux = document.getElementById('larp-rbx').value;
+            config.currencyPurchases = document.getElementById('larp-sales').value;
+            config.showFullAmount = document.getElementById('larp-full-rbx').checked;
+            config.randomize = document.getElementById('larp-randomize').checked;
+            config.premium = document.getElementById('larp-premium').checked;
+            config.hideFloatingButton = document.getElementById('larp-hide-btn').checked;
+            if (!config.handle.startsWith('@')) config.handle = '@' + config.handle;
+            saveConfig();
+            showToast('Settings saved! Reloading...');
+            setTimeout(() => win.location.reload(), 1000);
+        };
+
+        document.getElementById('larp-reset').onclick = () => {
+            if (confirm('⚠️ Reset all settings to default? This cannot be undone.')) {
+                GM_setValue('larp_config_v2', defaultConfig);
+                showToast('Reset complete! Reloading...');
+                setTimeout(() => win.location.reload(), 1000);
+            }
+        };
+
+        document.getElementById('larp-copy-avatar-btn').onclick = async () => {
+            const userId = document.getElementById('larp-avatar-userid').value;
+            if (userId) await copyAvatarFromUser(userId);
+            else showToast('Enter a user ID or username', true);
+        };
+
+        document.getElementById('larp-apply-avatar-btn').onclick = () => {
+            if (config.copiedAvatarUrl) {
+                applyCopiedAvatar();
+                showToast('Avatar applied to current page!');
+            } else {
+                showToast('No copied avatar found. Copy one first!', true);
+            }
+        };
+
+        document.getElementById('larp-play-music').onclick = () => playWeilandBluebands();
+        document.getElementById('larp-stop-music').onclick = () => stopAudio();
+
+        document.getElementById('larp-add-lim').onclick = () => {
+            const url = document.getElementById('larp-lim-url').value;
+            if (url) addLimited(url);
+        };
+
+        const updateRobuxPreview = () => {
+            const rbx = document.getElementById('larp-rbx')?.value || '0';
+            const preview = document.getElementById('larp-robux-preview');
+            if (preview) preview.textContent = getFakedAmount(rbx);
+        };
+        document.getElementById('larp-rbx').oninput = updateRobuxPreview;
+        document.getElementById('larp-sales').oninput = updateRobuxPreview;
+        updateRobuxPreview();
+
+        renderLimiteds();
+    };
+
+    const formatNum = (num) => num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    
+    const toShorthand = (num) => {
+        if (num < 1000) return num.toString();
+        if (num < 1000000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+        return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    };
+
+    const getFakedAmount = (baseStr) => {
+        if (!baseStr) return "0";
+        const raw = baseStr.toString().replace(/[^0-9\.KkMm]/g, '');
+        let amount = 0;
+        const lowRaw = raw.toLowerCase();
+        if (lowRaw.indexOf('m') !== -1) amount = parseFloat(raw) * 1000000;
+        else if (lowRaw.indexOf('k') !== -1) amount = parseFloat(raw) * 1000;
+        else amount = parseInt(raw) || 0;
+        if (config.randomize && amount > 1000 && amount % 1000 === 0) amount += 8731;
+        return formatNum(Math.floor(amount));
+    };
+
+    const addLimited = async (url) => {
+        const idMatch = url.match(/\/catalog\/(\d+)/) || url.match(/\/bundles\/(\d+)/) || url.match(/^(\d+)$/);
+        if (!idMatch) return showToast("Invalid URL or ID", true);
+        const itemId = idMatch[1];
+        try {
+            const infoRes = await new Promise(r => GM_xmlhttpRequest({ method: "GET", url: `https://catalog.roblox.com/v1/catalog/items/${itemId}/details?itemType=Asset`, onload: r }));
+            const info = JSON.parse(infoRes.responseText);
+            const thumbRes = await new Promise(r => GM_xmlhttpRequest({ method: "GET", url: `https://thumbnails.roblox.com/v1/assets?assetIds=${itemId}&size=150x150&format=Png`, onload: r }));
+            const thumb = JSON.parse(thumbRes.responseText).data[0]?.imageUrl || "";
+            config.limiteds.push({
+                id: itemId,
+                name: info.name || "Limited Item",
+                thumb: thumb,
+                equipped: true,
+                isLimited: true,
+                price: info.price || "N/A"
+            });
+            saveConfig();
+            renderLimiteds();
+            showToast(`Added ${info.name || 'item'} to limiteds!`);
+        } catch (e) {
+            showToast("Error fetching item details", true);
+        }
+    };
+
+    const renderLimiteds = () => {
+        const container = document.getElementById('larp-limiteds-list');
+        if (!container) return;
+        if (config.limiteds.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 30px; color: #555;">✨ No limited items added yet</div>';
+            return;
+        }
+        container.innerHTML = '';
+        config.limiteds.forEach((item, i) => {
+            const div = document.createElement('div');
+            div.className = 'larp-card';
+            div.style.padding = '12px';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.gap = '12px';
+            div.innerHTML = `
+                <img src="${item.thumb}" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 700; font-size: 13px;">${item.name}</div>
+                    <div style="font-size: 10px; color: #888;">ID: ${item.id}</div>
+                </div>
+                <button class="larp-del-btn" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 20px;">✕</button>
+            `;
+            div.querySelector('.larp-del-btn').onclick = () => {
+                config.limiteds.splice(i, 1);
+                saveConfig();
+                renderLimiteds();
+                showToast('Removed from limiteds');
+            };
+            container.appendChild(div);
+        });
+    };
+
+    let observer = null;
+    let isUpdating = false;
+    let lastRun = 0;
+    
+    const throttle = (func, limit) => {
+        return function() {
+            const now = Date.now();
+            if (now - lastRun >= limit) {
+                lastRun = now;
+                func.apply(this, arguments);
+            }
+        };
+    };
+
+    const applyFakes = () => {
+        if (isUpdating) return;
+        isUpdating = true;
+        if (observer) observer.disconnect();
+        
+        try {
+            const realisticFormatted = getFakedAmount(config.robux);
+            const totalAmount = parseInt(realisticFormatted.replace(/[^0-9]/g, ''));
+            const displayValue = config.showFullAmount ? realisticFormatted : toShorthand(totalAmount);
+            
+            const loggedInID = win.Roblox?.CurrentUser?.userId?.toString() || "";
+            const currentProfileID = win.location.href.match(/\/users\/(\d+)\//)?.[1] || "";
+            const isOnOwnProfile = loggedInID && currentProfileID ? (loggedInID === currentProfileID) : false;
+            
+            document.querySelectorAll('#nav-robux-amount, [data-testid="nav-robux-amount"], .robux-amount, .balance-value').forEach(el => {
+                if (el.closest('tr')?.textContent.includes('Sales of Goods')) return;
+                el.textContent = displayValue;
+                el.classList.add('larp-faked');
+            });
+            
+            const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            let node;
+            while (node = walk.nextNode()) {
+                const parent = node.parentElement;
+                if (!parent || ['SCRIPT', 'STYLE', 'INPUT', 'TEXTAREA'].includes(parent.tagName) ||
+                    parent.closest('#larp-menu, #larp-buy-overlay')) continue;
+                if (parent.closest('.chat-main, .friend-list, .people-list')) continue;
+                
+                const isProfileHeader = parent.closest('.profile-header, .header-title-container');
+                if (isProfileHeader && !isOnOwnProfile) continue;
+                
+                const realDN = win.Roblox?.CurrentUser?.displayName || "";
+                const realUN = win.Roblox?.CurrentUser?.name || "";
+                
+                if (realDN && node.nodeValue.includes(realDN)) node.nodeValue = node.nodeValue.replace(new RegExp(realDN, 'g'), config.username);
+                if (realUN && node.nodeValue.includes(realUN)) node.nodeValue = node.nodeValue.replace(new RegExp(realUN, 'g'), config.handle?.replace('@', '') || "User");
+                
+                if (isOnOwnProfile && (node.nodeValue.includes('Followers') || node.nodeValue.includes('Following'))) {
+                    const stats = parent.closest('.stats-list, .profile-stats-container');
+                    if (stats) {
+                        if (node.nodeValue.includes('Followers')) node.nodeValue = node.nodeValue.replace(/\d+[\d\.,KkMm]*/, config.followers || '0');
+                        if (node.nodeValue.includes('Following')) node.nodeValue = node.nodeValue.replace(/\d+[\d\.,KkMm]*/, config.following || '0');
+                    }
+                }
+            }
+            
+            if (config.premium) {
+                document.querySelectorAll('.header-title, .profile-display-name').forEach(el => {
+                    if (!el.querySelector('.icon-premium-medium')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'icon-premium-medium';
+                        badge.style.marginLeft = '8px';
+                        badge.style.filter = 'drop-shadow(0 0 2px #a855f7)';
+                        el.appendChild(badge);
+                    }
+                });
+            }
+            
+            applyCopiedAvatar();
+            
+            document.querySelectorAll('#nav-robux-amount, [data-testid="nav-robux-amount"], .robux-amount').forEach(el => {
+                el.style.visibility = 'visible';
+            });
+            
+        } catch (e) {
+            console.error("Apply fakes error:", e);
+        } finally {
+            isUpdating = false;
+            if (observer) observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        }
+    };
+    
+    const throttledApply = throttle(applyFakes, 200);
+    
+    observer = new MutationObserver((mutations) => {
+        let shouldUpdate = false;
+        for (const m of mutations) {
+            if (m.target.nodeType === 3 ? m.target.parentElement : m.target) {
+                shouldUpdate = true;
+                break;
+            }
+        }
+        if (shouldUpdate) throttledApply();
+    });
+    
+    win.addEventListener('keydown', (e) => {
+        if ((e.key === '+' || e.key === '=') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            e.preventDefault();
+            if (!document.getElementById('larp-menu')) createUI();
+            const menuEl = document.getElementById('larp-menu');
+            const overlayEl = document.getElementById('larp-overlay');
+            if (menuEl.style.display === 'none') {
+                menuEl.style.display = 'block';
+                overlayEl.style.display = 'block';
+                playWeilandBluebands();
+            } else {
+                menuEl.style.display = 'none';
+                overlayEl.style.display = 'none';
+                stopAudio();
+            }
+        }
+    }, true);
+    
+    const init = () => {
+        if (!document.body) {
+            setTimeout(init, 50);
+            return;
+        }
+        createUI();
+        applyFakes();
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    };
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
